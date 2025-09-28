@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Despegando con Kendric — Animación</title>
+
+  <!-- Tailwind optional (for quick styling of text overlay) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Three.js (r131+) and GSAP from CDN -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/gsap@3.12.2/dist/gsap.min.js"></script>
+
+  <style>
+    html,body { height:100%; margin:0; background:#05060a; font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+    #scene { position:fixed; inset:0; z-index:0; }
+    .overlay {
+      position:relative;
+      z-index:2;
+      pointer-events:none;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:100vh;
+      padding:2rem;
+      box-sizing:border-box;
+    }
+    .card {
+      max-width:900px;
+      background: linear-gradient(180deg, rgba(10,12,18,0.45), rgba(8,10,14,0.15));
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.04);
+      padding: 28px;
+      border-radius: 14px;
+      pointer-events: auto;
+    }
+    .lead { color: #d1d5db; font-size:1.05rem; line-height:1.6; }
+    .lead strong { color: #fff; }
+    /* small screen tweaks */
+    @media (max-width:640px) {
+      .card { padding:18px; border-radius:10px; }
+      .lead { font-size:0.95rem; }
+    }
+    /* subtle glow behind rocket path */
+    .glow {
+      position:absolute; inset:auto; z-index:1; pointer-events:none;
+      width:100%; height:100%; mix-blend-mode:screen;
+      background: radial-gradient(ellipse at center, rgba(6, 182, 212, 0.06), transparent 20%);
+      opacity:0.9;
+    }
+    /* small accessibility control (hidden) */
+    #reduceMotion { position: absolute; right:12px; top:12px; z-index:3; color:#fff; background: rgba(0,0,0,0.25); padding:6px 8px; border-radius:8px; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div id="scene"></div>
+
+  <div class="overlay">
+    <div class="card" id="textCard" aria-live="polite">
+      <p class="lead" id="leadText">
+        Hagamos posible que <strong>Kendric Palacios</strong> obtenga su certificación en cohetería de alta potencia y comparta su conocimiento a través de un campamento exclusivo para entusiastas y miembros activos.
+        Su participación en <strong>Baja Rocket Science</strong> del 10 al 12 de octubre de 2025 en Laguna Salada, Baja California, le permitirá alcanzar esta certificación y brindar experiencias únicas y entrenamiento profesional.
+      </p>
+    </div>
+  </div>
+
+  <div class="glow" aria-hidden="true"></div>
+  <button id="reduceMotion">Reduce motion</button>
+
+  <script>
+  // Basic Three.js scene with rocket + starfield + launch animation
+  (function(){
+    const sceneEl = document.getElementById('scene');
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+    const reduceMotionBtn = document.getElementById('reduceMotion');
+    let reduceMotion = false;
+
+    reduceMotionBtn.addEventListener('click', ()=> {
+      reduceMotion = !reduceMotion;
+      reduceMotionBtn.textContent = reduceMotion ? 'Motion reduced' : 'Reduce motion';
+    });
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.domElement.style.display = 'block';
+    sceneEl.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 6, 18);
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambient);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+    dir.position.set(5,10,7);
+    scene.add(dir);
+
+    // Starfield (particles)
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 1200;
+    const positions = new Float32Array(starCount * 3);
+    for (let i=0;i<starCount;i++){
+      const r = 120 + Math.random()*400;
+      const theta = Math.random()*Math.PI*2;
+      const phi = (Math.random()-0.5)*Math.PI;
+      positions[i*3] = Math.cos(theta)*Math.cos(phi)*r;
+      positions[i*3+1] = Math.sin(phi)*r*0.6; // flattened a bit
+      positions[i*3+2] = Math.sin(theta)*Math.cos(phi)*r;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const starMat = new THREE.PointsMaterial({ color:0x99d6ff, size: 1.6, transparent:true, opacity:0.85 });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
+
+    // Ground / horizon glow
+    const groundGeo = new THREE.PlaneGeometry(1000,1000,1,1);
+    const groundMat = new THREE.MeshBasicMaterial({ color:0x02030a, transparent:true, opacity:0.6 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI/2;
+    ground.position.y = -9.2;
+    scene.add(ground);
+
+    // Rocket group
+    const rocket = new THREE.Group();
+
+    // Body
+    const bodyGeo = new THREE.CylinderGeometry(0.6,0.6,6,24);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xdbeafe, metalness: 0.2, roughness: 0.4 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0;
+    rocket.add(body);
+
+    // Nose cone
+    const coneGeo = new THREE.ConeGeometry(0.6,1.2,24);
+    const coneMat = new THREE.MeshStandardMaterial({ color:0xffedd5, metalness:0.2, roughness:0.5 });
+    const nose = new THREE.Mesh(coneGeo, coneMat);
+    nose.position.y = 3.6;
+    rocket.add(nose);
+
+    // Fins
+    function makeFin(angle){
+      const finGeo = new THREE.BoxGeometry(0.1, 0.9, 1.6);
+      const finMat = new THREE.MeshStandardMaterial({ color:0xfef3c7, metalness:0.1, roughness:0.7 });
+      const fin = new THREE.Mesh(finGeo, finMat);
+      fin.position.set(Math.cos(angle)*0.8, -2.2, Math.sin(angle)*0.8*1.2);
+      fin.rotation.y = angle;
+      fin.rotation.z = 0.2;
+      return fin;
+    }
+    rocket.add(makeFin(0));
+    rocket.add(makeFin(Math.PI/2));
+    rocket.add(makeFin(Math.PI));
+    rocket.add(makeFin(-Math.PI/2));
+
+    rocket.position.set(0, -4, 0);
+    scene.add(rocket);
+
+    // Flame (cone with additive blending)
+    const flameGeo = new THREE.ConeGeometry(0.5, 2.2, 16);
+    const flameMat = new THREE.MeshBasicMaterial({ color:0xff8a00, transparent:true, opacity:0.95, blending: THREE.AdditiveBlending });
+    const flame = new THREE.Mesh(flameGeo, flameMat);
+    flame.position.y = -6.1;
+    flame.rotation.x = Math.PI;
+    rocket.add(flame);
+
+    // small pulse for flame
+    let flameScale = 1;
+
+    // subtle camera target animation
+    const cameraTarget = new THREE.Vector3(0, 0, 0);
+
+    // helper to create launch path curve points (for visual debug optional)
+    const pathPoints = [];
+    for (let i=0;i<120;i++){
+      const t = i/120;
+      pathPoints.push(new THREE.Vector3(0, t*50 + Math.sin(t*2.5)*2, -t*30 + Math.cos(t*2.3)*4));
+    }
+
+    // little smoke particles (sprite-like)
+    const particleGeometry = new THREE.BufferGeometry();
+    const pCount = 120;
+    const pPos = new Float32Array(pCount*3);
+    for (let i=0;i<pCount;i++){
+      pPos[i*3] = (Math.random()-0.5)*1.2;
+      pPos[i*3+1] = -5 - Math.random()*2;
+      pPos[i*3+2] = (Math.random()-0.5)*1.2;
+    }
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+    const particleMat = new THREE.PointsMaterial({ color:0xffffff, size: 0.6, transparent:true, opacity:0.06 });
+    const particles = new THREE.Points(particleGeometry, particleMat);
+    particles.position.y = -2;
+    scene.add(particles);
+
+    // Resize handling
+    function onResize(){
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', onResize, { passive:true });
+
+    // OrbitControls for exploration (disabled spin by default)
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enabled = !isMobile; // disable on mobile for performance
+    controls.target.copy(cameraTarget);
+    controls.update();
+
+    // Animation timeline with GSAP
+    const timeline = gsap.timeline({ defaults: { ease: "power2.inOut" } });
+
+    // initial camera dolly in
+    timeline.to(camera.position, { z: 14, duration: 0.8 }, 0);
+    timeline.to(camera.position, { y: 8, duration: 0.8 }, 0);
+
+    // rocket subtle float before launch
+    timeline.to(rocket.position, { y: -3.5, duration: 1.4, yoyo:true, repeat:1 }, 0);
+
+    // text entrance (fade + slide)
+    gsap.from("#textCard", { y: 18, opacity: 0, duration: 1.2, delay: 0.2, ease: "power3.out" });
+
+    // small flame pulsing
+    gsap.to(flame.scale, { x: 1.05, y: 1.2, z: 1.05, duration: 0.25, yoyo:true, repeat:-1 });
+
+    // launch sequence (delayed)
+    timeline.to(flame.material, { opacity: 1.0, duration: 0.2 }, ">1.0");
+    timeline.to(particles.material, { opacity: 0.18, duration: 0.2 }, ">-0.15");
+    timeline.to(rocket.rotation, { x: -0.06, z: 0.07, duration: 0.6 }, ">-0.1");
+    timeline.to(rocket.position, { y: 40, z: -80, duration: 4.2, ease: "power4.in" }, ">0.2");
+    timeline.to(camera.position, { x: 0, y: 50, z: -80, duration: 4.2, ease: "power4.in" }, "<"); // camera follows
+    timeline.to(stars.rotation, { y: 0.4, duration: 5, ease: "none" }, "<");
+    timeline.to(particles.position, { y: 20, duration: 4.2, ease: "power4.in" }, "<");
+
+    // after launch, fade out card slightly
+    timeline.to("#textCard", { opacity: 0.6, duration: 1.2 }, "-=1.0");
+
+    // loopable subtle star rotation
+    gsap.to(stars.rotation, { y: 0.02, duration: 60, repeat:-1, ease: "none" });
+
+    // render loop
+    const clock = new THREE.Clock();
+    function animate(){
+      const dt = clock.getDelta();
+
+      // star twinkle
+      const positions = starGeo.attributes.position.array;
+      for (let i=0;i<starCount;i++){
+        const idx = i*3 + 1;
+        positions[idx] += Math.sin(clock.elapsedTime*0.6 + i)*0.0008;
+      }
+      starGeo.attributes.position.needsUpdate = true;
+
+      // flame pulse (scale)
+      flame.scale.set(1 + Math.sin(clock.elapsedTime*40)*0.06, 1 + Math.abs(Math.sin(clock.elapsedTime*30))*0.3, 1);
+
+      // small rotation for body pre-launch
+      if (!reduceMotion) rocket.rotation.y += 0.002;
+
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Accessibility: respect prefers-reduced-motion
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (media.matches) {
+      reduceMotion = true;
+      gsap.globalTimeline.timeScale(0.2);
+    }
+  })();
+  </script>
+</body>
+</html>
