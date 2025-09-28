@@ -9,7 +9,50 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- Three.js (r131+) and GSAP from CDN -->
-  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script type="module">
+  import * as THREE from "https://unpkg.com/three@0.152.2/build/three.module.js";
+  import { OrbitControls } from "https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js";
+
+  // Crear escena
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Luz
+  const light = new THREE.PointLight(0xffffff, 1);
+  light.position.set(10, 10, 10);
+  scene.add(light);
+
+  // Cohete (cono sobre un cilindro)
+  const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 3, 32);
+  const coneGeometry = new THREE.ConeGeometry(0.5, 1.5, 32);
+
+  const material = new THREE.MeshStandardMaterial({ color: 0x00aaff });
+  const body = new THREE.Mesh(bodyGeometry, material);
+  const cone = new THREE.Mesh(coneGeometry, material);
+
+  cone.position.y = 2.25;
+  scene.add(body);
+  scene.add(cone);
+
+  // Controles de cámara
+  const controls = new OrbitControls(camera, renderer.domElement);
+  camera.position.z = 6;
+
+  // Animación
+  function animate() {
+    requestAnimationFrame(animate);
+    body.rotation.y += 0.01;
+    cone.rotation.y += 0.01;
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+</script>
+
+  
   <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
   <script src="https://unpkg.com/gsap@3.12.2/dist/gsap.min.js"></script>
 
